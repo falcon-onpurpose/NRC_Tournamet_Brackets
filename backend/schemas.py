@@ -351,6 +351,10 @@ class MatchListResponse(BaseModel):
     page: int
     per_page: int
 
+class MatchStatisticsResponse(BaseModel):
+    swiss_matches: Dict[str, int]
+    elimination_matches: Dict[str, int]
+
 # Team Registration and Import Schemas
 class TeamRegistrationResponse(BaseModel):
     team: TeamResponse

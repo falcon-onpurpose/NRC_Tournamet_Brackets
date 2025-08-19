@@ -1,8 +1,10 @@
 """
-Temporary main file for testing refactored structure.
+Main FastAPI application for NRC Tournament Program.
 """
+
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
@@ -11,13 +13,9 @@ from typing import Optional
 
 from config import get_settings
 from database import get_session, create_db_and_tables
-from infrastructure.api.teams_api import router as teams_router
-from infrastructure.api.matches_api import router as matches_router
-from infrastructure.api.validation_api import router as validation_router
-from infrastructure.api.csv_import_api import router as csv_import_router
-from infrastructure.api.robots_api import router as robots_router
-from infrastructure.api.players_api import router as players_router
-from infrastructure.api.robot_classes_api import router as robot_classes_router
+from services.container import get_container, Container
+from api import tournaments, teams, matches, robot_classes, public, arena
+
 
 # Configure logging
 logging.basicConfig(
@@ -31,7 +29,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
-    logger.info("Starting NRC Tournament Program (Refactored)...")
+    logger.info("Starting NRC Tournament Program...")
     
     # Initialize database
     try:
@@ -41,6 +39,10 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}")
         raise
     
+    # Initialize services container
+    container = get_container()
+    logger.info("Services container initialized")
+    
     yield
     
     # Shutdown
@@ -49,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI application
 app = FastAPI(
-    title="NRC Tournament Program (Refactored)",
+    title="NRC Tournament Program",
     description="Tournament management system for robot combat events",
     version="1.0.0",
     docs_url="/docs",
@@ -68,6 +70,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add trusted host middleware for security (optional)
+# if hasattr(settings, 'TRUSTED_HOSTS') and settings.TRUSTED_HOSTS:
+#     app.add_middleware(
+#         TrustedHostMiddleware,
+#         allowed_hosts=settings.TRUSTED_HOSTS
+#     )
+
+
+# Dependency injection
+def get_container_dependency() -> Container:
+    """Get services container dependency."""
+    return get_container()
+
 
 # Global exception handler
 @app.exception_handler(Exception)
@@ -88,56 +104,62 @@ async def global_exception_handler(request, exc):
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "1.0.0"}
+    return {
+        "status": "healthy",
+        "service": "NRC Tournament Program",
+        "version": "1.0.0"
+    }
 
 
-# Include routers
+# Include API routers
 app.include_router(
-    teams_router,
+    tournaments.router,
+    prefix="/api/v1/tournaments",
+    tags=["Tournaments"],
+    dependencies=[Depends(get_container_dependency)]
+)
+
+app.include_router(
+    teams.router,
     prefix="/api/v1/teams",
     tags=["Teams"],
+    dependencies=[Depends(get_container_dependency)]
 )
 
 app.include_router(
-    matches_router,
+    matches.router,
     prefix="/api/v1/matches",
     tags=["Matches"],
+    dependencies=[Depends(get_container_dependency)]
 )
 
 app.include_router(
-    validation_router,
-    prefix="/api/v1/validation",
-    tags=["Validation"],
-)
-
-app.include_router(
-    csv_import_router,
-    prefix="/api/v1/csv-import",
-    tags=["CSV Import"],
-)
-
-app.include_router(
-    robots_router,
-    prefix="/api/v1/robots",
-    tags=["Robots"],
-)
-
-app.include_router(
-    players_router,
-    prefix="/api/v1/players",
-    tags=["Players"],
-)
-
-app.include_router(
-    robot_classes_router,
+    robot_classes.router,
     prefix="/api/v1/robot-classes",
     tags=["Robot Classes"],
+    dependencies=[Depends(get_container_dependency)]
 )
+
+app.include_router(
+    public.router,
+    prefix="/api/v1/public",
+    tags=["Public Display"],
+    dependencies=[Depends(get_container_dependency)]
+)
+
+app.include_router(
+    arena.router,
+    prefix="/api/v1/arena",
+    tags=["Arena Integration"],
+    dependencies=[Depends(get_container_dependency)]
+)
+
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main_refactored:app",
+        "main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=settings.RELOAD
+        reload=settings.DEBUG,
+        log_level="info"
     )

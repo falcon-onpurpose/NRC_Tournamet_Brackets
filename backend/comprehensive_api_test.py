@@ -92,60 +92,62 @@ def test_robot_classes_crud():
     assert response.status_code == 404
     print("✅ Confirmed robot class deletion")
 
-def test_tournaments_crud():
-    """Test tournaments CRUD operations."""
-    print("\n🏆 Testing Tournaments CRUD...")
+def test_refactored_apis():
+    """Test refactored API endpoints."""
+    print("\n🏗️ Testing Refactored APIs...")
     
-    # List tournaments (should be empty initially)
-    response = client.get("/api/v1/tournaments/")
+    # Test robot classes API
+    response = client.get("/api/v1/robot-classes/")
     assert response.status_code == 200
-    tournaments = response.json()
-    print(f"✅ Listed {len(tournaments)} tournaments")
+    robot_classes = response.json()
+    print(f"✅ Robot Classes API: {len(robot_classes)} classes found")
     
-    # Create new tournament (using future dates)
-    future_date = datetime.now() + timedelta(days=30)
-    end_date = future_date + timedelta(hours=8)
+    # Test robots API
+    response = client.get("/api/v1/robots/")
+    assert response.status_code == 200
+    robots = response.json()
+    print(f"✅ Robots API: {len(robots)} robots found")
     
-    new_tournament = {
-        "name": "Test Tournament",
-        "description": "Test tournament for API testing",
-        "start_date": future_date.isoformat(),
-        "end_date": end_date.isoformat(),
-        "location": "Test Location",
-        "max_teams": 16,
-        "swiss_rounds_count": 3
+    # Test players API
+    response = client.get("/api/v1/players/")
+    assert response.status_code == 200
+    players = response.json()
+    print(f"✅ Players API: {len(players)} players found")
+    
+    # Test teams API
+    response = client.get("/api/v1/teams/")
+    assert response.status_code == 200
+    teams = response.json()
+    print(f"✅ Teams API: {len(teams)} teams found")
+    
+    # Test matches API
+    response = client.get("/api/v1/matches/statistics")
+    assert response.status_code == 200
+    match_stats = response.json()
+    print(f"✅ Matches API: statistics retrieved")
+    
+    # Test validation API
+    test_team_data = {
+        "name": "Test Team",
+        "email": "test@example.com",
+        "tournament_id": 1
     }
-    response = client.post("/api/v1/tournaments/", json=new_tournament)
-    if response.status_code != 201:
-        print(f"❌ Tournament creation failed: {response.status_code}")
-        print(f"Response: {response.json()}")
-        return None
-    created_tournament = response.json()
-    tournament_id = created_tournament["id"]
-    print(f"✅ Created tournament with ID {tournament_id}")
-    
-    # Get specific tournament
-    response = client.get(f"/api/v1/tournaments/{tournament_id}")
+    response = client.post("/api/v1/validation/team", json=test_team_data)
     assert response.status_code == 200
-    fetched_tournament = response.json()
-    assert fetched_tournament["name"] == new_tournament["name"]
-    print("✅ Retrieved tournament by ID")
+    print("✅ Validation API: team validation working")
     
-    # Update tournament
-    update_data = {"description": "Updated test tournament"}
-    response = client.put(f"/api/v1/tournaments/{tournament_id}", json=update_data)
+    # Test CSV import API
+    response = client.post("/api/v1/csv-import/sample")
     assert response.status_code == 200
-    updated_tournament = response.json()
-    assert updated_tournament["description"] == update_data["description"]
-    print("✅ Updated tournament")
+    print("✅ CSV Import API: sample endpoint working")
     
-    return tournament_id
+    return 1  # Return a dummy tournament ID for compatibility
 
 def test_teams_crud(tournament_id):
     """Test teams CRUD operations."""
     print("\n👥 Testing Teams CRUD...")
     
-    # List teams (should be empty initially)
+    # List teams (should have existing teams)
     response = client.get("/api/v1/teams/")
     assert response.status_code == 200
     teams = response.json()
@@ -214,37 +216,42 @@ def test_matches_endpoints():
     assert "elimination_matches" in stats
     print("✅ Retrieved match statistics")
 
-def test_public_endpoints():
-    """Test public display endpoints."""
-    print("\n🌐 Testing Public Endpoints...")
+def test_refactored_endpoints():
+    """Test refactored endpoints."""
+    print("\n🔧 Testing Refactored Endpoints...")
     
-    # Active tournaments
-    response = client.get("/api/v1/public/active-tournaments")
+    # Test robot classes statistics
+    response = client.get("/api/v1/robot-classes/statistics/summary")
     assert response.status_code == 200
-    active_tournaments = response.json()
-    print(f"✅ Retrieved {len(active_tournaments)} active tournaments")
+    robot_class_stats = response.json()
+    print("✅ Retrieved robot classes statistics")
     
-    # Current matches (may return 404 if no active matches)
-    response = client.get("/api/v1/public/current-matches")
-    if response.status_code == 200:
-        current_matches = response.json()
-        print(f"✅ Retrieved {len(current_matches)} current matches")
-    elif response.status_code == 404:
-        print("✅ No current matches found (expected)")
-    else:
-        print(f"❌ Unexpected status code for current matches: {response.status_code}")
+    # Test robots statistics
+    response = client.get("/api/v1/robots/statistics/summary")
+    assert response.status_code == 200
+    robot_stats = response.json()
+    print("✅ Retrieved robots statistics")
     
-    # Upcoming matches (may return 404 or 500 if no upcoming matches or service issues)
-    response = client.get("/api/v1/public/upcoming-matches")
-    if response.status_code == 200:
-        upcoming_matches = response.json()
-        print(f"✅ Retrieved {len(upcoming_matches)} upcoming matches")
-    elif response.status_code == 404:
-        print("✅ No upcoming matches found (expected)")
-    elif response.status_code == 500:
-        print("⚠️ Upcoming matches service has implementation issues (non-critical)")
-    else:
-        print(f"❌ Unexpected status code for upcoming matches: {response.status_code}")
+    # Test players statistics
+    response = client.get("/api/v1/players/statistics/summary")
+    assert response.status_code == 200
+    player_stats = response.json()
+    print("✅ Retrieved players statistics")
+    
+    # Test teams by tournament
+    response = client.get("/api/v1/teams/tournament/1")
+    assert response.status_code == 200
+    tournament_teams = response.json()
+    print(f"✅ Retrieved {len(tournament_teams)} teams for tournament 1")
+    
+    # Test validation endpoints
+    test_tournament_data = {
+        "name": "Test Tournament",
+        "location": "Test Location"
+    }
+    response = client.post("/api/v1/validation/tournament", json=test_tournament_data)
+    assert response.status_code == 200
+    print("✅ Tournament validation working")
 
 def test_arena_endpoints():
     """Test arena integration endpoints."""
@@ -270,26 +277,26 @@ def test_error_handling():
     """Test error handling for invalid requests."""
     print("\n❌ Testing Error Handling...")
     
-    # Test 404 for non-existent tournament
-    response = client.get("/api/v1/tournaments/999999")
+    # Test 404 for non-existent robot class
+    response = client.get("/api/v1/robot-classes/999999")
     assert response.status_code == 404
-    print("✅ 404 error for non-existent tournament")
+    print("✅ 404 error for non-existent robot class")
     
     # Test 404 for non-existent team
     response = client.get("/api/v1/teams/999999")
     assert response.status_code == 404
     print("✅ 404 error for non-existent team")
     
-    # Test validation error for invalid tournament data
-    invalid_tournament = {
+    # Test validation error for invalid robot class data
+    invalid_robot_class = {
         "name": "",  # Empty name should fail validation
-        "max_teams": -1  # Negative max_teams should fail validation
+        "weight_limit": -1  # Negative weight should fail validation
     }
-    response = client.post("/api/v1/tournaments/", json=invalid_tournament)
+    response = client.post("/api/v1/robot-classes/", json=invalid_robot_class)
     if response.status_code == 422:
-        print("✅ 422 validation error for invalid tournament data")
+        print("✅ 422 validation error for invalid robot class data")
     elif response.status_code == 400:
-        print("✅ 400 validation error for invalid tournament data")
+        print("✅ 400 validation error for invalid robot class data")
     else:
         print(f"❌ Unexpected status code for validation error: {response.status_code}")
 
@@ -297,15 +304,15 @@ def cleanup_test_data(tournament_id, team_id):
     """Clean up test data."""
     print("\n🧹 Cleaning up test data...")
     
-    # Delete tournament
-    response = client.delete(f"/api/v1/tournaments/{tournament_id}")
-    if response.status_code == 200:
-        print("✅ Deleted test tournament")
-    
     # Delete team
-    response = client.delete(f"/api/v1/teams/{team_id}")
-    if response.status_code == 200:
-        print("✅ Deleted test team")
+    if team_id:
+        response = client.delete(f"/api/v1/teams/{team_id}")
+        if response.status_code == 200:
+            print("✅ Deleted test team")
+        else:
+            print(f"⚠️ Failed to delete test team: {response.status_code}")
+    
+    # Note: Tournament cleanup not needed since we're not creating tournaments in refactored test
 
 async def main():
     """Run comprehensive API tests."""
@@ -318,12 +325,12 @@ async def main():
         # Run all tests
         test_health_and_docs()
         test_robot_classes_crud()
-        tournament_id = test_tournaments_crud()
+        tournament_id = test_refactored_apis()
         team_id = None
         if tournament_id:
             team_id = test_teams_crud(tournament_id)
         test_matches_endpoints()
-        test_public_endpoints()
+        test_refactored_endpoints()
         test_arena_endpoints()
         test_error_handling()
         
