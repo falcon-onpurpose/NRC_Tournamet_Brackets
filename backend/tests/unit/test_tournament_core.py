@@ -23,7 +23,7 @@ class TestTournamentService:
             format="hybrid_swiss_elimination",
             location="Test Arena",
             description="Test tournament",
-            swiss_rounds=3
+            swiss_rounds_count=3
         )
         
         # Act
@@ -34,7 +34,7 @@ class TestTournamentService:
         assert result.format == "hybrid_swiss_elimination"
         assert result.status == "setup"
         assert result.id is not None
-        assert result.swiss_rounds == 3
+        assert result.swiss_rounds_count == 3
     
     @pytest.mark.asyncio
     async def test_get_tournament_success(self, test_session: AsyncSession, sample_tournament):

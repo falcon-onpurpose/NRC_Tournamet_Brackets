@@ -37,7 +37,7 @@ class TestTournamentService:
             format="hybrid_swiss_elimination",
             location="Test Arena",
             description="Test tournament",
-            swiss_rounds=3,
+            swiss_rounds_count=3,
             start_date=datetime.utcnow() + timedelta(days=1),
             end_date=datetime.utcnow() + timedelta(days=2)
         )
@@ -50,7 +50,7 @@ class TestTournamentService:
         assert result.format == "hybrid_swiss_elimination"
         assert result.status == "setup"
         assert result.id is not None
-        assert result.swiss_rounds == 3
+        assert result.swiss_rounds_count == 3
     
     @pytest.mark.asyncio
     async def test_create_tournament_validation_failure(self, tournament_service, test_session: AsyncSession):
@@ -61,7 +61,7 @@ class TestTournamentService:
             format="invalid_format",  # Invalid: unknown format
             location="Test Arena",
             description="Test tournament",
-            swiss_rounds=0,  # Invalid: zero rounds
+            swiss_rounds_count=0,  # Invalid: zero rounds
             start_date=datetime.utcnow() + timedelta(days=1),
             end_date=datetime.utcnow() + timedelta(days=2)
         )

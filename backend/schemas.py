@@ -16,7 +16,7 @@ class BaseResponse(BaseModel):
 class TournamentCreate(BaseModel):
     name: str = Field(..., max_length=100)
     format: str = Field(default=TournamentFormat.HYBRID_SWISS_ELIMINATION.value)
-    swiss_rounds: int = Field(default=3)
+    swiss_rounds_count: int = Field(default=3)
     location: Optional[str] = None
     description: Optional[str] = None
     start_date: Optional[datetime] = None
@@ -25,7 +25,7 @@ class TournamentCreate(BaseModel):
 class TournamentUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     format: Optional[str] = None
-    swiss_rounds: Optional[int] = Field(None)
+    swiss_rounds_count: Optional[int] = Field(None)
     location: Optional[str] = None
     description: Optional[str] = None
     start_date: Optional[datetime] = None
@@ -84,6 +84,7 @@ class RobotClassResponse(RobotClassCreate):
 # Team Schemas
 class TeamCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    tournament_id: int = Field(..., description="Tournament ID that this team belongs to")
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -201,6 +202,14 @@ class EliminationMatchResponse(EliminationMatchCreate):
     winner_name: Optional[str] = None
     
     model_config = {"from_attributes": True}
+
+# Match Result Schemas
+class MatchResultCreate(BaseModel):
+    winner_id: int
+    team1_score: int = Field(..., ge=0)
+    team2_score: int = Field(..., ge=0)
+    completion_reason: Optional[str] = Field(None, pattern=r"^(timeout|reset|manual|forfeit)$")
+    notes: Optional[str] = None
 
 # Arena Integration Schemas
 class ArenaMatchStart(BaseModel):
@@ -341,3 +350,18 @@ class MatchListResponse(BaseModel):
     total: int
     page: int
     per_page: int
+
+# Team Registration and Import Schemas
+class TeamRegistrationResponse(BaseModel):
+    team: TeamResponse
+    robots: List[RobotResponse]
+    players: List[PlayerResponse]
+    registration_time: datetime = Field(default_factory=datetime.utcnow)
+
+class TeamImportResponse(BaseModel):
+    imported_count: int
+    error_count: int
+    teams: List[TeamResponse]
+    errors: List[Dict[str, Any]]
+    import_report: Optional[str] = None
+    validation_summary: Optional[Dict[str, Any]] = None

@@ -6,8 +6,8 @@ Handles match creation, management, and result processing for both Swiss and eli
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from sqlmodel import Session, select, and_, or_
-from contextlib import contextmanager
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, or_
 
 from models import (
     SwissMatch, EliminationMatch, Team, Tournament, SwissRound, 
@@ -15,7 +15,8 @@ from models import (
 )
 from schemas import (
     SwissMatchCreate, SwissMatchUpdate, SwissMatchResponse,
-    EliminationMatchCreate, EliminationMatchUpdate, EliminationMatchResponse
+    EliminationMatchCreate, EliminationMatchUpdate, EliminationMatchResponse,
+    MatchResultCreate
 )
 from services.validation_service import ValidationService
 from config import Settings
@@ -28,21 +29,10 @@ class MatchService:
         self.settings = settings
         self.validation_service = ValidationService()
     
-    @contextmanager
-    def get_session(self, session: Session):
-        """Context manager for database session."""
-        try:
-            yield session
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
-    
     # Swiss Match Methods
     async def create_swiss_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_data: SwissMatchCreate
     ) -> SwissMatchResponse:
         """Create a new Swiss match."""
@@ -52,8 +42,16 @@ class MatchService:
             raise ValueError(f"Invalid match data: {validation_result.errors}")
         
         # Check if teams exist
-        team1 = session.get(Team, match_data.team1_id)
-        team2 = session.get(Team, match_data.team2_id)
+        team1_result = await session.execute(
+            select(Team).where(Team.id == match_data.team1_id)
+        )
+        team1 = team1_result.scalar_one_or_none()
+        
+        team2_result = await session.execute(
+            select(Team).where(Team.id == match_data.team2_id)
+        )
+        team2 = team2_result.scalar_one_or_none()
+        
         if not team1 or not team2:
             raise ValueError("One or both teams not found")
         
@@ -67,42 +65,72 @@ class MatchService:
         )
         
         session.add(match)
-        session.commit()
-        session.refresh(match)
+        await session.commit()
+        await session.refresh(match)
         
-        return self._create_swiss_match_response(session, match)
+        return await self._create_swiss_match_response(session, match)
+    
+    async def get_swiss_matches(
+        self,
+        session: AsyncSession,
+        tournament_id: Optional[int] = None,
+        round_number: Optional[int] = None,
+        status_filter: Optional[str] = None
+    ) -> List[SwissMatchResponse]:
+        """Get Swiss matches with optional filters."""
+        stmt = select(SwissMatch).join(SwissRound)
+        
+        if tournament_id:
+            stmt = stmt.where(SwissRound.tournament_id == tournament_id)
+        if round_number:
+            stmt = stmt.where(SwissRound.round_number == round_number)
+        if status_filter:
+            stmt = stmt.where(SwissMatch.status == status_filter)
+        
+        result = await session.execute(stmt)
+        matches = result.scalars().all()
+        
+        return [await self._create_swiss_match_response(session, match) for match in matches]
     
     async def get_swiss_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_id: int
     ) -> Optional[SwissMatchResponse]:
         """Get a Swiss match by ID."""
-        match = session.get(SwissMatch, match_id)
+        result = await session.execute(
+            select(SwissMatch).where(SwissMatch.id == match_id)
+        )
+        match = result.scalar_one_or_none()
         if not match:
             return None
         
-        return self._create_swiss_match_response(session, match)
+        return await self._create_swiss_match_response(session, match)
     
     async def get_swiss_matches_by_round(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         round_id: int
     ) -> List[SwissMatchResponse]:
         """Get all matches for a specific Swiss round."""
-        statement = select(SwissMatch).where(SwissMatch.swiss_round_id == round_id)
-        matches = session.exec(statement).all()
+        result = await session.execute(
+            select(SwissMatch).where(SwissMatch.swiss_round_id == round_id)
+        )
+        matches = result.scalars().all()
         
-        return [self._create_swiss_match_response(session, match) for match in matches]
+        return [await self._create_swiss_match_response(session, match) for match in matches]
     
     async def update_swiss_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_id: int, 
         update_data: SwissMatchUpdate
     ) -> Optional[SwissMatchResponse]:
         """Update a Swiss match."""
-        match = session.get(SwissMatch, match_id)
+        result = await session.execute(
+            select(SwissMatch).where(SwissMatch.id == match_id)
+        )
+        match = result.scalar_one_or_none()
         if not match:
             return None
         
@@ -119,18 +147,21 @@ class MatchService:
             match.end_time = update_data.end_time
         
         session.add(match)
-        session.commit()
-        session.refresh(match)
+        await session.commit()
+        await session.refresh(match)
         
-        return self._create_swiss_match_response(session, match)
+        return await self._create_swiss_match_response(session, match)
     
     async def start_swiss_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_id: int
     ) -> Optional[SwissMatchResponse]:
         """Start a Swiss match."""
-        match = session.get(SwissMatch, match_id)
+        result = await session.execute(
+            select(SwissMatch).where(SwissMatch.id == match_id)
+        )
+        match = result.scalar_one_or_none()
         if not match:
             return None
         
@@ -141,46 +172,51 @@ class MatchService:
         match.start_time = datetime.utcnow()
         
         session.add(match)
-        session.commit()
-        session.refresh(match)
+        await session.commit()
+        await session.refresh(match)
         
-        return self._create_swiss_match_response(session, match)
+        return await self._create_swiss_match_response(session, match)
     
     async def complete_swiss_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_id: int, 
-        winner_id: int, 
-        scores: Dict[str, Any]
+        result_data: MatchResultCreate
     ) -> Optional[SwissMatchResponse]:
         """Complete a Swiss match with results."""
         # Validate match result
-        validation_result = self.validation_service.validate_match_result(winner_id, scores)
+        validation_result = self.validation_service.validate_match_result(
+            result_data.winner_id, 
+            {"team1_score": result_data.team1_score, "team2_score": result_data.team2_score}
+        )
         if not validation_result.is_valid:
             raise ValueError(f"Invalid match result: {validation_result.errors}")
         
-        match = session.get(SwissMatch, match_id)
+        result = await session.execute(
+            select(SwissMatch).where(SwissMatch.id == match_id)
+        )
+        match = result.scalar_one_or_none()
         if not match:
             return None
         
         if match.status != MatchStatus.IN_PROGRESS.value:
             raise ValueError("Match is not in progress")
         
-        match.winner_id = winner_id
-        match.scores = scores
+        match.winner_id = result_data.winner_id
+        match.scores = {"team1_score": result_data.team1_score, "team2_score": result_data.team2_score}
         match.status = MatchStatus.COMPLETED.value
         match.end_time = datetime.utcnow()
         
         session.add(match)
-        session.commit()
-        session.refresh(match)
+        await session.commit()
+        await session.refresh(match)
         
-        return self._create_swiss_match_response(session, match)
+        return await self._create_swiss_match_response(session, match)
     
     # Elimination Match Methods
     async def create_elimination_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_data: EliminationMatchCreate
     ) -> EliminationMatchResponse:
         """Create a new elimination match."""
@@ -190,8 +226,16 @@ class MatchService:
             raise ValueError(f"Invalid match data: {validation_result.errors}")
         
         # Check if teams exist
-        team1 = session.get(Team, match_data.team1_id)
-        team2 = session.get(Team, match_data.team2_id)
+        team1_result = await session.execute(
+            select(Team).where(Team.id == match_data.team1_id)
+        )
+        team1 = team1_result.scalar_one_or_none()
+        
+        team2_result = await session.execute(
+            select(Team).where(Team.id == match_data.team2_id)
+        )
+        team2 = team2_result.scalar_one_or_none()
+        
         if not team1 or not team2:
             raise ValueError("One or both teams not found")
         
@@ -207,42 +251,72 @@ class MatchService:
         )
         
         session.add(match)
-        session.commit()
-        session.refresh(match)
+        await session.commit()
+        await session.refresh(match)
         
-        return self._create_elimination_match_response(session, match)
+        return await self._create_elimination_match_response(session, match)
+    
+    async def get_elimination_matches(
+        self,
+        session: AsyncSession,
+        bracket_id: Optional[int] = None,
+        round_number: Optional[int] = None,
+        status_filter: Optional[str] = None
+    ) -> List[EliminationMatchResponse]:
+        """Get elimination matches with optional filters."""
+        stmt = select(EliminationMatch)
+        
+        if bracket_id:
+            stmt = stmt.where(EliminationMatch.bracket_id == bracket_id)
+        if round_number:
+            stmt = stmt.where(EliminationMatch.round_number == round_number)
+        if status_filter:
+            stmt = stmt.where(EliminationMatch.status == status_filter)
+        
+        result = await session.execute(stmt)
+        matches = result.scalars().all()
+        
+        return [await self._create_elimination_match_response(session, match) for match in matches]
     
     async def get_elimination_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_id: int
     ) -> Optional[EliminationMatchResponse]:
         """Get an elimination match by ID."""
-        match = session.get(EliminationMatch, match_id)
+        result = await session.execute(
+            select(EliminationMatch).where(EliminationMatch.id == match_id)
+        )
+        match = result.scalar_one_or_none()
         if not match:
             return None
         
-        return self._create_elimination_match_response(session, match)
+        return await self._create_elimination_match_response(session, match)
     
     async def get_elimination_matches_by_bracket(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         bracket_id: int
     ) -> List[EliminationMatchResponse]:
         """Get all matches for a specific elimination bracket."""
-        statement = select(EliminationMatch).where(EliminationMatch.bracket_id == bracket_id)
-        matches = session.exec(statement).all()
+        result = await session.execute(
+            select(EliminationMatch).where(EliminationMatch.bracket_id == bracket_id)
+        )
+        matches = result.scalars().all()
         
-        return [self._create_elimination_match_response(session, match) for match in matches]
+        return [await self._create_elimination_match_response(session, match) for match in matches]
     
     async def update_elimination_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_id: int, 
         update_data: EliminationMatchUpdate
     ) -> Optional[EliminationMatchResponse]:
         """Update an elimination match."""
-        match = session.get(EliminationMatch, match_id)
+        result = await session.execute(
+            select(EliminationMatch).where(EliminationMatch.id == match_id)
+        )
+        match = result.scalar_one_or_none()
         if not match:
             return None
         
@@ -259,18 +333,21 @@ class MatchService:
             match.end_time = update_data.end_time
         
         session.add(match)
-        session.commit()
-        session.refresh(match)
+        await session.commit()
+        await session.refresh(match)
         
-        return self._create_elimination_match_response(session, match)
+        return await self._create_elimination_match_response(session, match)
     
     async def start_elimination_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_id: int
     ) -> Optional[EliminationMatchResponse]:
         """Start an elimination match."""
-        match = session.get(EliminationMatch, match_id)
+        result = await session.execute(
+            select(EliminationMatch).where(EliminationMatch.id == match_id)
+        )
+        match = result.scalar_one_or_none()
         if not match:
             return None
         
@@ -281,89 +358,133 @@ class MatchService:
         match.start_time = datetime.utcnow()
         
         session.add(match)
-        session.commit()
-        session.refresh(match)
+        await session.commit()
+        await session.refresh(match)
         
-        return self._create_elimination_match_response(session, match)
+        return await self._create_elimination_match_response(session, match)
     
     async def complete_elimination_match(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match_id: int, 
-        winner_id: int, 
-        scores: Dict[str, Any]
+        result_data: MatchResultCreate
     ) -> Optional[EliminationMatchResponse]:
         """Complete an elimination match with results."""
         # Validate match result
-        validation_result = self.validation_service.validate_match_result(winner_id, scores)
+        validation_result = self.validation_service.validate_match_result(
+            result_data.winner_id, 
+            {"team1_score": result_data.team1_score, "team2_score": result_data.team2_score}
+        )
         if not validation_result.is_valid:
             raise ValueError(f"Invalid match result: {validation_result.errors}")
         
-        match = session.get(EliminationMatch, match_id)
+        result = await session.execute(
+            select(EliminationMatch).where(EliminationMatch.id == match_id)
+        )
+        match = result.scalar_one_or_none()
         if not match:
             return None
         
         if match.status != MatchStatus.IN_PROGRESS.value:
             raise ValueError("Match is not in progress")
         
-        match.winner_id = winner_id
-        match.scores = scores
+        match.winner_id = result_data.winner_id
+        match.scores = {"team1_score": result_data.team1_score, "team2_score": result_data.team2_score}
         match.status = MatchStatus.COMPLETED.value
         match.end_time = datetime.utcnow()
         
         session.add(match)
-        session.commit()
-        session.refresh(match)
+        await session.commit()
+        await session.refresh(match)
         
-        return self._create_elimination_match_response(session, match)
+        return await self._create_elimination_match_response(session, match)
     
     # Utility Methods
     async def get_pending_matches(
         self, 
-        session: Session, 
-        tournament_id: int
-    ) -> Dict[str, List]:
+        session: AsyncSession, 
+        tournament_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """Get all pending matches for a tournament."""
+        matches = []
+        
         # Get pending Swiss matches
-        swiss_statement = select(SwissMatch).join(SwissRound).where(
-            and_(
-                SwissRound.tournament_id == tournament_id,
-                SwissMatch.status == MatchStatus.SCHEDULED.value
+        swiss_stmt = select(SwissMatch).join(SwissRound)
+        if tournament_id:
+            swiss_stmt = swiss_stmt.where(
+                and_(
+                    SwissRound.tournament_id == tournament_id,
+                    SwissMatch.status == MatchStatus.SCHEDULED.value
+                )
             )
-        )
-        pending_swiss = session.exec(swiss_statement).all()
+        else:
+            swiss_stmt = swiss_stmt.where(SwissMatch.status == MatchStatus.SCHEDULED.value)
+        
+        swiss_result = await session.execute(swiss_stmt)
+        pending_swiss = swiss_result.scalars().all()
+        
+        for match in pending_swiss:
+            response = await self._create_swiss_match_response(session, match)
+            matches.append({
+                "id": response.id,
+                "type": "swiss",
+                "team1_name": response.team1_name,
+                "team2_name": response.team2_name,
+                "status": response.status.value,
+                "scheduled_time": response.scheduled_time,
+                "round_number": getattr(match, 'round_number', None)
+            })
         
         # Get pending elimination matches
-        elimination_statement = select(EliminationMatch).join(EliminationBracket).where(
-            and_(
-                EliminationBracket.tournament_id == tournament_id,
-                EliminationMatch.status == MatchStatus.SCHEDULED.value
+        elimination_stmt = select(EliminationMatch).join(EliminationBracket)
+        if tournament_id:
+            elimination_stmt = elimination_stmt.where(
+                and_(
+                    EliminationBracket.tournament_id == tournament_id,
+                    EliminationMatch.status == MatchStatus.SCHEDULED.value
+                )
             )
-        )
-        pending_elimination = session.exec(elimination_statement).all()
+        else:
+            elimination_stmt = elimination_stmt.where(EliminationMatch.status == MatchStatus.SCHEDULED.value)
         
-        return {
-            "swiss_matches": [self._create_swiss_match_response(session, match) for match in pending_swiss],
-            "elimination_matches": [self._create_elimination_match_response(session, match) for match in pending_elimination]
-        }
+        elimination_result = await session.execute(elimination_stmt)
+        pending_elimination = elimination_result.scalars().all()
+        
+        for match in pending_elimination:
+            response = await self._create_elimination_match_response(session, match)
+            matches.append({
+                "id": response.id,
+                "type": "elimination",
+                "team1_name": response.team1_name,
+                "team2_name": response.team2_name,
+                "status": response.status.value,
+                "scheduled_time": response.scheduled_time,
+                "round_number": response.round_number
+            })
+        
+        return matches
     
     async def get_match_statistics(
         self, 
-        session: Session, 
-        tournament_id: int
+        session: AsyncSession, 
+        tournament_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """Get match statistics for a tournament."""
         # Swiss match stats
-        swiss_statement = select(SwissMatch).join(SwissRound).where(
-            SwissRound.tournament_id == tournament_id
-        )
-        swiss_matches = session.exec(swiss_statement).all()
+        swiss_stmt = select(SwissMatch).join(SwissRound)
+        if tournament_id:
+            swiss_stmt = swiss_stmt.where(SwissRound.tournament_id == tournament_id)
+        
+        swiss_result = await session.execute(swiss_stmt)
+        swiss_matches = swiss_result.scalars().all()
         
         # Elimination match stats
-        elimination_statement = select(EliminationMatch).join(EliminationBracket).where(
-            EliminationBracket.tournament_id == tournament_id
-        )
-        elimination_matches = session.exec(elimination_statement).all()
+        elimination_stmt = select(EliminationMatch).join(EliminationBracket)
+        if tournament_id:
+            elimination_stmt = elimination_stmt.where(EliminationBracket.tournament_id == tournament_id)
+        
+        elimination_result = await session.execute(elimination_stmt)
+        elimination_matches = elimination_result.scalars().all()
         
         return {
             "swiss_matches": {
@@ -381,15 +502,28 @@ class MatchService:
         }
     
     # Helper Methods
-    def _create_swiss_match_response(
+    async def _create_swiss_match_response(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match: SwissMatch
     ) -> SwissMatchResponse:
         """Create a Swiss match response with team names."""
-        team1 = session.get(Team, match.team1_id)
-        team2 = session.get(Team, match.team2_id)
-        winner = session.get(Team, match.winner_id) if match.winner_id else None
+        team1_result = await session.execute(
+            select(Team).where(Team.id == match.team1_id)
+        )
+        team1 = team1_result.scalar_one_or_none()
+        
+        team2_result = await session.execute(
+            select(Team).where(Team.id == match.team2_id)
+        )
+        team2 = team2_result.scalar_one_or_none()
+        
+        winner = None
+        if match.winner_id:
+            winner_result = await session.execute(
+                select(Team).where(Team.id == match.winner_id)
+            )
+            winner = winner_result.scalar_one_or_none()
         
         return SwissMatchResponse(
             id=match.id,
@@ -407,15 +541,28 @@ class MatchService:
             winner_name=winner.name if winner else None
         )
     
-    def _create_elimination_match_response(
+    async def _create_elimination_match_response(
         self, 
-        session: Session, 
+        session: AsyncSession, 
         match: EliminationMatch
     ) -> EliminationMatchResponse:
         """Create an elimination match response with team names."""
-        team1 = session.get(Team, match.team1_id)
-        team2 = session.get(Team, match.team2_id)
-        winner = session.get(Team, match.winner_id) if match.winner_id else None
+        team1_result = await session.execute(
+            select(Team).where(Team.id == match.team1_id)
+        )
+        team1 = team1_result.scalar_one_or_none()
+        
+        team2_result = await session.execute(
+            select(Team).where(Team.id == match.team2_id)
+        )
+        team2 = team2_result.scalar_one_or_none()
+        
+        winner = None
+        if match.winner_id:
+            winner_result = await session.execute(
+                select(Team).where(Team.id == match.winner_id)
+            )
+            winner = winner_result.scalar_one_or_none()
         
         return EliminationMatchResponse(
             id=match.id,

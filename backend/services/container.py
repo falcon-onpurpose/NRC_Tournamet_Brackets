@@ -9,20 +9,10 @@ from database import get_session
 from .tournament_service import TournamentService
 from .match_service import MatchService
 
-try:
-    from .team_service import TeamService  # type: ignore
-except Exception:
-    TeamService = None  # type: ignore
+from .team_service import TeamService
 
-try:
-    from .bracket_service import BracketService  # type: ignore
-except Exception:
-    BracketService = None  # type: ignore
-
-try:
-    from .standings_service import StandingsService  # type: ignore
-except Exception:
-    StandingsService = None  # type: ignore
+from .bracket_service import BracketService
+from .standings_service import StandingsService
 from .validation_service import ValidationService
 
 
@@ -58,22 +48,22 @@ class Container:
     @property
     def team_service(self) -> TeamService:
         """Get team service instance."""
-        if self._team_service is None and TeamService is not None:
-            self._team_service = TeamService(self.settings)  # type: ignore
+        if self._team_service is None:
+            self._team_service = TeamService(self.settings)
         return self._team_service
     
     @property
     def bracket_service(self) -> BracketService:
         """Get bracket service instance."""
-        if self._bracket_service is None and BracketService is not None:
-            self._bracket_service = BracketService(self.settings)  # type: ignore
+        if self._bracket_service is None:
+            self._bracket_service = BracketService()
         return self._bracket_service
     
     @property
     def standings_service(self) -> StandingsService:
         """Get standings service instance."""
-        if self._standings_service is None and StandingsService is not None:
-            self._standings_service = StandingsService(self.settings)  # type: ignore
+        if self._standings_service is None:
+            self._standings_service = StandingsService()
         return self._standings_service
     
     @property
@@ -93,21 +83,15 @@ class Container:
     
     def get_team_service_with_session(self, session: AsyncSession) -> TeamService:
         """Get team service with specific database session."""
-        if TeamService is None:
-            raise RuntimeError("TeamService not implemented yet")
-        return TeamService(self.settings, session)  # type: ignore
+        return TeamService(self.settings)
     
     def get_bracket_service_with_session(self, session: AsyncSession) -> BracketService:
         """Get bracket service with specific database session."""
-        if BracketService is None:
-            raise RuntimeError("BracketService not implemented yet")
-        return BracketService(self.settings, session)  # type: ignore
+        return BracketService(session)
     
     def get_standings_service_with_session(self, session: AsyncSession) -> StandingsService:
         """Get standings service with specific database session."""
-        if StandingsService is None:
-            raise RuntimeError("StandingsService not implemented yet")
-        return StandingsService(self.settings, session)  # type: ignore
+        return StandingsService(session)
 
 
 # Global container instance

@@ -4,10 +4,11 @@ Database configuration and setup for NRC Tournament Program
 
 from sqlmodel import SQLModel, create_engine, Session, select
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 import os
 import logging
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, AsyncGenerator
 from config import settings
 from datetime import datetime
 
@@ -41,20 +42,35 @@ def create_database_engine():
 # Create engine instance
 engine = create_database_engine()
 
-def create_db_and_tables():
+# Create async engine for async operations
+async_engine = create_async_engine(
+    settings.DATABASE_URL.replace("sqlite:///", "sqlite+aiosqlite:///"),
+    echo=settings.DEBUG,
+    connect_args={"check_same_thread": False}
+)
+
+# Create async session maker
+async_session_maker = async_sessionmaker(
+    async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
+
+async def create_db_and_tables():
     """Create all database tables"""
     try:
-        SQLModel.metadata.create_all(engine)
+        async with async_engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
         logger.info("Database tables created successfully")
         
         # Create default robot classes if they don't exist
-        create_default_robot_classes()
+        await create_default_robot_classes()
         
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
         raise
 
-def create_default_robot_classes():
+async def create_default_robot_classes():
     """Create default robot classes for NRC tournaments"""
     from models import RobotClass
     
@@ -89,36 +105,37 @@ def create_default_robot_classes():
     ]
     
     try:
-        with Session(engine) as session:
+        async with async_session_maker() as session:
             for class_data in default_classes:
                 # Check if class already exists
-                existing = session.exec(
+                result = await session.execute(
                     select(RobotClass).where(RobotClass.name == class_data["name"])
-                ).first()
+                )
+                existing = result.scalar_one_or_none()
                 
                 if not existing:
                     robot_class = RobotClass(**class_data)
                     session.add(robot_class)
                     logger.info(f"Created default robot class: {class_data['name']}")
             
-            session.commit()
+            await session.commit()
             logger.info("Default robot classes created successfully")
             
     except Exception as e:
         logger.error(f"Error creating default robot classes: {e}")
         # Don't raise here as this is not critical for startup
 
-def get_session() -> Generator[Session, None, None]:
-    """Dependency to get database session"""
-    with Session(engine) as session:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """Dependency to get async database session"""
+    async with async_session_maker() as session:
         try:
             yield session
         except Exception as e:
-            session.rollback()
+            await session.rollback()
             logger.error(f"Database session error: {e}")
             raise
         finally:
-            session.close()
+            await session.close()
 
 @contextmanager
 def get_session_context():

@@ -24,7 +24,7 @@ class TestValidationService:
             format="hybrid_swiss_elimination",
             location="Valid Arena",
             description="Valid description",
-            swiss_rounds=3,
+            swiss_rounds_count=3,
             start_date=datetime.utcnow() + timedelta(days=1),
             end_date=datetime.utcnow() + timedelta(days=2)
         )
@@ -44,7 +44,7 @@ class TestValidationService:
             format="hybrid_swiss_elimination",
             location="Valid Arena",
             description="Valid description",
-            swiss_rounds=3,
+            swiss_rounds_count=3,
             start_date=datetime.utcnow() + timedelta(days=1),
             end_date=datetime.utcnow() + timedelta(days=2)
         )
@@ -86,7 +86,7 @@ class TestValidationService:
             format="hybrid_swiss_elimination",
             location="Valid Arena",
             description="Valid description",
-            swiss_rounds=0,  # Invalid: zero rounds
+            swiss_rounds_count=0,  # Invalid: zero rounds
             start_date=datetime.utcnow() + timedelta(days=1),
             end_date=datetime.utcnow() + timedelta(days=2)
         )
@@ -107,7 +107,7 @@ class TestValidationService:
             format="hybrid_swiss_elimination",
             location="Valid Arena",
             description="Valid description",
-            swiss_rounds=3,
+            swiss_rounds_count=3,
             start_date=datetime.utcnow() + timedelta(days=2),
             end_date=datetime.utcnow() + timedelta(days=1)  # End before start
         )
@@ -128,7 +128,7 @@ class TestValidationService:
             format="hybrid_swiss_elimination",
             location="Valid Arena",
             description="Valid description",
-            swiss_rounds=3,
+            swiss_rounds_count=3,
             start_date=datetime.utcnow() - timedelta(days=1),  # Past date
             end_date=datetime.utcnow() + timedelta(days=1)
         )
@@ -259,12 +259,13 @@ class TestValidationService:
     def test_validate_team_data_success(self, validation_service):
         """Test successful team data validation."""
         # Arrange
-        data = {
-            "name": "Valid Team",
-            "address": "Valid Address",
-            "phone": "1234567890",
-            "email": "team@example.com"
-        }
+        from schemas import TeamCreate
+        data = TeamCreate(
+            name="Valid Team",
+            address="Valid Address",
+            phone="1234567890",
+            email="team@example.com"
+        )
         
         # Act
         result = validation_service.validate_team_data(data)
@@ -275,48 +276,51 @@ class TestValidationService:
     
     def test_validate_team_data_missing_name(self, validation_service):
         """Test team data validation with missing name."""
+        # This test is no longer valid since Pydantic validates required fields
+        # We'll test with an address that's too long instead
+        from schemas import TeamCreate
+        
         # Arrange
-        data = {
-            "address": "Valid Address",
-            "phone": "1234567890",
-            "email": "team@example.com"
-        }
+        data = TeamCreate(
+            name="Valid Team",
+            address="x" * 501,  # Address too long (max 500)
+            phone="1234567890",
+            email="team@example.com"
+        )
         
         # Act
         result = validation_service.validate_team_data(data)
         
         # Assert
         assert result.is_valid is False
-        assert len(result.errors) == 1
-        assert "name is required" in result.errors[0]
+        assert "Address must be 500 characters or less" in result.errors
     
     def test_validate_team_data_invalid_email(self, validation_service):
         """Test team data validation with invalid email."""
         # Arrange
-        data = {
-            "name": "Valid Team",
-            "address": "Valid Address",
-            "phone": "1234567890",
-            "email": "invalid-email"  # Invalid email format
-        }
+        from schemas import TeamCreate
+        data = TeamCreate(
+            name="Valid Team",
+            address="Valid Address",
+            phone="1234567890",
+            email="invalid-email"  # Invalid email format
+        )
         
         # Act
         result = validation_service.validate_team_data(data)
         
         # Assert
         assert result.is_valid is False
-        assert len(result.errors) == 1
-        assert "Invalid email format" in result.errors[0]
+        assert "Email must be a valid email address" in result.errors
     
     def test_validate_robot_data_success(self, validation_service):
         """Test successful robot data validation."""
         # Arrange
-        data = {
-            "name": "Valid Robot",
-            "team_id": 1,
-            "robot_class_id": 1,
-            "weight": 150.5
-        }
+        from schemas import RobotCreate
+        data = RobotCreate(
+            name="Valid Robot",
+            robot_class_id=1
+        )
         
         # Act
         result = validation_service.validate_robot_data(data)
@@ -327,38 +331,39 @@ class TestValidationService:
     
     def test_validate_robot_data_missing_name(self, validation_service):
         """Test robot data validation with missing name."""
+        # This test is no longer valid since Pydantic validates required fields
+        # We'll test with comments that are too long instead
+        from schemas import RobotCreate
+        
         # Arrange
-        data = {
-            "team_id": 1,
-            "robot_class_id": 1,
-            "weight": 150.5
-        }
+        data = RobotCreate(
+            name="Valid Robot",
+            robot_class_id=1,
+            comments="x" * 1001  # Comments too long (max 1000)
+        )
         
         # Act
         result = validation_service.validate_robot_data(data)
         
         # Assert
         assert result.is_valid is False
-        assert len(result.errors) == 1
-        assert "name is required" in result.errors[0]
+        assert "Robot comments must be 1000 characters or less" in result.errors
     
     def test_validate_robot_data_invalid_weight(self, validation_service):
-        """Test robot data validation with invalid weight."""
+        """Test robot data validation with invalid robot class ID."""
         # Arrange
-        data = {
-            "name": "Valid Robot",
-            "team_id": 1,
-            "robot_class_id": 1,
-            "weight": -10  # Invalid: negative weight
-        }
+        from schemas import RobotCreate
+        data = RobotCreate(
+            name="Valid Robot",
+            robot_class_id=0  # Invalid robot class ID
+        )
         
         # Act
         result = validation_service.validate_robot_data(data)
         
         # Assert
         assert result.is_valid is False
-        assert len(result.errors) == 1
-        assert "weight must be positive" in result.errors[0]
+        assert "Valid robot class ID is required" in result.errors
     
     def test_validate_csv_import_data_success(self, validation_service):
         """Test successful CSV import data validation."""

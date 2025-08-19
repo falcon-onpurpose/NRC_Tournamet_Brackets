@@ -1,41 +1,68 @@
 """
-NRC Tournament Program - Main FastAPI Application
-Based on Bracket tournament system with arena integration
+Main FastAPI application for NRC Tournament Program.
 """
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import logging
 import uvicorn
-from typing import List, Optional
+from typing import Optional
 
-from .database import engine, create_db_and_tables
-from .models import Tournament, Match, Team, Player
-from .schemas import TournamentCreate, TournamentResponse, MatchCreate, MatchResponse
-from .arena_integration import ArenaIntegration
-from .config import settings
+from config import get_settings
+from database import get_session, create_db_and_tables
+from services.container import get_container, Container
+from api import tournaments, teams, matches, robot_classes, public, arena
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan management"""
+    """Application lifespan manager."""
     # Startup
-    create_db_and_tables()
-    print("🚀 NRC Tournament Program started")
+    logger.info("Starting NRC Tournament Program...")
+    
+    # Initialize database
+    try:
+        await create_db_and_tables()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        raise
+    
+    # Initialize services container
+    container = get_container()
+    logger.info("Services container initialized")
+    
     yield
+    
     # Shutdown
-    print("🛑 NRC Tournament Program stopped")
+    logger.info("Shutting down NRC Tournament Program...")
 
 
+# Create FastAPI application
 app = FastAPI(
     title="NRC Tournament Program",
-    description="Tournament management system with arena integration",
+    description="Tournament management system for robot combat events",
     version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan
 )
 
-# CORS middleware for frontend integration
+# Get settings
+settings = get_settings()
+
+# Add middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -44,128 +71,95 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files for public displays
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Add trusted host middleware for security (optional)
+# if hasattr(settings, 'TRUSTED_HOSTS') and settings.TRUSTED_HOSTS:
+#     app.add_middleware(
+#         TrustedHostMiddleware,
+#         allowed_hosts=settings.TRUSTED_HOSTS
+#     )
 
-# Arena integration instance
-arena_integration = ArenaIntegration()
+
+# Dependency injection
+def get_container_dependency() -> Container:
+    """Get services container dependency."""
+    return get_container()
 
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Global exception handler."""
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "success": False,
+            "message": "Internal server error",
+            "error": str(exc) if settings.DEBUG else "An unexpected error occurred"
+        }
+    )
+
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
     return {
-        "message": "NRC Tournament Program API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "arena_integration": "/arena/docs"
+        "status": "healthy",
+        "service": "NRC Tournament Program",
+        "version": "1.0.0"
     }
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "arena_connected": arena_integration.is_connected()}
+# Include API routers
+app.include_router(
+    tournaments.router,
+    prefix="/api/v1/tournaments",
+    tags=["Tournaments"],
+    dependencies=[Depends(get_container_dependency)]
+)
 
+app.include_router(
+    teams.router,
+    prefix="/api/v1/teams",
+    tags=["Teams"],
+    dependencies=[Depends(get_container_dependency)]
+)
 
-# Tournament endpoints
-@app.post("/tournaments/", response_model=TournamentResponse)
-async def create_tournament(tournament: TournamentCreate):
-    """Create a new tournament"""
-    # Implementation will be added
-    pass
+app.include_router(
+    matches.router,
+    prefix="/api/v1/matches",
+    tags=["Matches"],
+    dependencies=[Depends(get_container_dependency)]
+)
 
+app.include_router(
+    robot_classes.router,
+    prefix="/api/v1/robot-classes",
+    tags=["Robot Classes"],
+    dependencies=[Depends(get_container_dependency)]
+)
 
-@app.get("/tournaments/", response_model=List[TournamentResponse])
-async def list_tournaments():
-    """List all tournaments"""
-    # Implementation will be added
-    pass
+app.include_router(
+    public.router,
+    prefix="/api/v1/public",
+    tags=["Public Display"],
+    dependencies=[Depends(get_container_dependency)]
+)
 
-
-@app.get("/tournaments/{tournament_id}", response_model=TournamentResponse)
-async def get_tournament(tournament_id: int):
-    """Get tournament details"""
-    # Implementation will be added
-    pass
-
-
-# Match endpoints
-@app.post("/matches/", response_model=MatchResponse)
-async def create_match(match: MatchCreate):
-    """Create a new match"""
-    # Implementation will be added
-    pass
-
-
-@app.get("/matches/", response_model=List[MatchResponse])
-async def list_matches(tournament_id: Optional[int] = None):
-    """List matches, optionally filtered by tournament"""
-    # Implementation will be added
-    pass
-
-
-@app.get("/matches/{match_id}", response_model=MatchResponse)
-async def get_match(match_id: int):
-    """Get match details"""
-    # Implementation will be added
-    pass
-
-
-@app.post("/matches/{match_id}/start")
-async def start_match(match_id: int):
-    """Start a match and communicate with arena"""
-    try:
-        # Get match details
-        # Send match parameters to arena
-        arena_params = {
-            "match_id": match_id,
-            "duration": 300,  # 5 minutes default
-            "pit_assignment": "pit_1"
-        }
-        
-        success = await arena_integration.start_match(arena_params)
-        if success:
-            return {"message": f"Match {match_id} started", "arena_status": "ready"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to start match in arena")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/matches/{match_id}/complete")
-async def complete_match(match_id: int, winner_id: int, scores: dict):
-    """Complete a match and update tournament"""
-    try:
-        # Update match results
-        # Update tournament brackets
-        # Report completion to arena
-        await arena_integration.complete_match(match_id, winner_id, scores)
-        return {"message": f"Match {match_id} completed", "winner_id": winner_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Public display endpoints
-@app.get("/public/tournaments/{tournament_id}")
-async def public_tournament_view(tournament_id: int):
-    """Public view of tournament for displays"""
-    # Implementation will be added
-    pass
-
-
-@app.get("/public/matches/upcoming")
-async def upcoming_matches():
-    """Get upcoming matches for public displays"""
-    # Implementation will be added
-    pass
+app.include_router(
+    arena.router,
+    prefix="/api/v1/arena",
+    tags=["Arena Integration"],
+    dependencies=[Depends(get_container_dependency)]
+)
 
 
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.DEBUG,
         log_level="info"
     )

@@ -128,7 +128,7 @@ async def sample_tournament(test_session):
         status="setup",
         location="Test Arena",
         description="Test tournament for unit tests",
-        swiss_rounds=3
+        swiss_rounds_count=3
     )
     
     test_session.add(tournament)

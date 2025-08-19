@@ -7,10 +7,7 @@ from .container import Container
 from .tournament_service import TournamentService
 from .match_service import MatchService
 
-try:
-    from .team_service import TeamService  # type: ignore
-except Exception:
-    TeamService = None  # type: ignore
+from .team_service import TeamService
 
 try:
     from .bracket_service import BracketService  # type: ignore

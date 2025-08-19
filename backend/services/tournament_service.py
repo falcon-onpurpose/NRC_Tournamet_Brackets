@@ -55,7 +55,7 @@ class TournamentService:
             status="setup",
             location=data.location,
             description=data.description,
-            swiss_rounds=data.swiss_rounds,
+            swiss_rounds_count=data.swiss_rounds_count,
             start_date=data.start_date,
             end_date=data.end_date,
             created_at=datetime.utcnow(),

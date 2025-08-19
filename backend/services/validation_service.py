@@ -5,7 +5,10 @@ from typing import List, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
 
-from schemas import TournamentCreate, TournamentUpdate, SwissMatchCreate, EliminationMatchCreate
+from schemas import (
+    TournamentCreate, TournamentUpdate, SwissMatchCreate, EliminationMatchCreate,
+    TeamCreate, TeamUpdate, RobotCreate, RobotUpdate, PlayerCreate, PlayerUpdate
+)
 
 
 @dataclass
@@ -81,9 +84,9 @@ class ValidationService:
         
         # Validate Swiss rounds
         if data.format in ["swiss", "hybrid_swiss_elimination"]:
-            if data.swiss_rounds < 1:
+            if data.swiss_rounds_count < 1:
                 errors.append("Swiss rounds must be at least 1")
-            elif data.swiss_rounds > 20:
+            elif data.swiss_rounds_count > 20:
                 errors.append("Swiss rounds cannot exceed 20")
         
         # Validate dates
@@ -134,10 +137,10 @@ class ValidationService:
             errors.append("Tournament description must be 1000 characters or less")
         
         # Validate Swiss rounds if provided
-        if data.swiss_rounds is not None:
-            if data.swiss_rounds < 1:
+        if data.swiss_rounds_count is not None:
+            if data.swiss_rounds_count < 1:
                 errors.append("Swiss rounds must be at least 1")
-            elif data.swiss_rounds > 20:
+            elif data.swiss_rounds_count > 20:
                 errors.append("Swiss rounds cannot exceed 20")
         
         # Validate dates if provided
@@ -234,12 +237,12 @@ class ValidationService:
             errors=errors
         )
     
-    def validate_team_data(self, data: Dict[str, Any]) -> ValidationResult:
+    def validate_team_data(self, data: TeamCreate) -> ValidationResult:
         """
-        Validate team data.
+        Validate team creation data.
         
         Args:
-            data: Team data dictionary
+            data: Team creation data
             
         Returns:
             Validation result
@@ -247,45 +250,78 @@ class ValidationService:
         errors = []
         
         # Validate name
-        if not data.get("name") or not data["name"].strip():
+        if not data.name or not data.name.strip():
             errors.append("Team name is required")
-        elif len(data["name"].strip()) > 255:
-            errors.append("Team name must be 255 characters or less")
-        
-        # Validate address
-        if not data.get("address") or not data["address"].strip():
-            errors.append("Team address is required")
-        elif len(data["address"].strip()) > 500:
-            errors.append("Team address must be 500 characters or less")
-        
-        # Validate phone
-        if data.get("phone"):
-            phone = data["phone"].strip()
-            if len(phone) > 20:
-                errors.append("Phone number must be 20 characters or less")
-            # Basic phone validation (can be enhanced)
-            if not phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace("+", "").isdigit():
-                errors.append("Phone number contains invalid characters")
+        elif len(data.name.strip()) > 100:
+            errors.append("Team name must be 100 characters or less")
         
         # Validate email
-        if data.get("email"):
-            email = data["email"].strip()
-            if len(email) > 255:
+        if data.email:
+            if len(data.email) > 255:
                 errors.append("Email must be 255 characters or less")
-            if "@" not in email or "." not in email:
-                errors.append("Invalid email format")
+            elif '@' not in data.email:
+                errors.append("Email must be a valid email address")
+        
+        # Validate phone
+        if data.phone and len(data.phone) > 50:
+            errors.append("Phone must be 50 characters or less")
+        
+        # Validate address
+        if data.address and len(data.address) > 500:
+            errors.append("Address must be 500 characters or less")
         
         return ValidationResult(
             is_valid=len(errors) == 0,
             errors=errors
         )
     
-    def validate_robot_data(self, data: Dict[str, Any]) -> ValidationResult:
+    def validate_team_update(self, data: TeamUpdate) -> ValidationResult:
         """
-        Validate robot data.
+        Validate team update data.
         
         Args:
-            data: Robot data dictionary
+            data: Team update data
+            
+        Returns:
+            Validation result
+        """
+        errors = []
+        
+        # Validate name if provided
+        if data.name is not None:
+            if not data.name.strip():
+                errors.append("Team name cannot be empty")
+            elif len(data.name.strip()) > 100:
+                errors.append("Team name must be 100 characters or less")
+        
+        # Validate email if provided
+        if data.email is not None:
+            if len(data.email) > 255:
+                errors.append("Email must be 255 characters or less")
+            elif '@' not in data.email:
+                errors.append("Email must be a valid email address")
+        
+        # Validate phone if provided
+        if data.phone is not None and len(data.phone) > 50:
+            errors.append("Phone must be 50 characters or less")
+        
+        # Validate address if provided
+        if data.address is not None and len(data.address) > 500:
+            errors.append("Address must be 500 characters or less")
+        
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors
+        )
+    
+    # Robot Validation Methods
+    
+    def validate_robot_data(self, data: RobotCreate) -> ValidationResult:
+        """
+        Validate robot creation data.
+        
+        Args:
+            data: Robot creation data
             
         Returns:
             Validation result
@@ -293,29 +329,122 @@ class ValidationService:
         errors = []
         
         # Validate name
-        if not data.get("name") or not data["name"].strip():
+        if not data.name or not data.name.strip():
             errors.append("Robot name is required")
-        elif len(data["name"].strip()) > 255:
-            errors.append("Robot name must be 255 characters or less")
-        
-        # Validate team ID
-        if not data.get("team_id") or data["team_id"] <= 0:
-            errors.append("Valid team ID is required")
+        elif len(data.name.strip()) > 100:
+            errors.append("Robot name must be 100 characters or less")
         
         # Validate robot class ID
-        if not data.get("robot_class_id") or data["robot_class_id"] <= 0:
+        if data.robot_class_id <= 0:
             errors.append("Valid robot class ID is required")
         
-        # Validate weight
-        if data.get("weight"):
-            try:
-                weight = float(data["weight"])
-                if weight <= 0:
-                    errors.append("Robot weight must be positive")
-                elif weight > 10000:  # 10kg max
-                    errors.append("Robot weight cannot exceed 10kg")
-            except (ValueError, TypeError):
-                errors.append("Robot weight must be a valid number")
+        # Validate comments
+        if data.comments and len(data.comments) > 1000:
+            errors.append("Robot comments must be 1000 characters or less")
+        
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors
+        )
+    
+    def validate_robot_update(self, data: RobotUpdate) -> ValidationResult:
+        """
+        Validate robot update data.
+        
+        Args:
+            data: Robot update data
+            
+        Returns:
+            Validation result
+        """
+        errors = []
+        
+        # Validate name if provided
+        if data.name is not None:
+            if not data.name.strip():
+                errors.append("Robot name cannot be empty")
+            elif len(data.name.strip()) > 100:
+                errors.append("Robot name must be 100 characters or less")
+        
+        # Validate comments if provided
+        if data.comments is not None and len(data.comments) > 1000:
+            errors.append("Robot comments must be 1000 characters or less")
+        
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors
+        )
+    
+    # Player Validation Methods
+    
+    def validate_player_data(self, data: PlayerCreate) -> ValidationResult:
+        """
+        Validate player creation data.
+        
+        Args:
+            data: Player creation data
+            
+        Returns:
+            Validation result
+        """
+        errors = []
+        
+        # Validate first name
+        if not data.first_name or not data.first_name.strip():
+            errors.append("Player first name is required")
+        elif len(data.first_name.strip()) > 50:
+            errors.append("Player first name must be 50 characters or less")
+        
+        # Validate last name
+        if not data.last_name or not data.last_name.strip():
+            errors.append("Player last name is required")
+        elif len(data.last_name.strip()) > 50:
+            errors.append("Player last name must be 50 characters or less")
+        
+        # Validate email
+        if data.email:
+            if len(data.email) > 255:
+                errors.append("Player email must be 255 characters or less")
+            elif '@' not in data.email:
+                errors.append("Player email must be a valid email address")
+        
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors
+        )
+    
+    def validate_player_update(self, data: PlayerUpdate) -> ValidationResult:
+        """
+        Validate player update data.
+        
+        Args:
+            data: Player update data
+            
+        Returns:
+            Validation result
+        """
+        errors = []
+        
+        # Validate first name if provided
+        if data.first_name is not None:
+            if not data.first_name.strip():
+                errors.append("Player first name cannot be empty")
+            elif len(data.first_name.strip()) > 50:
+                errors.append("Player first name must be 50 characters or less")
+        
+        # Validate last name if provided
+        if data.last_name is not None:
+            if not data.last_name.strip():
+                errors.append("Player last name cannot be empty")
+            elif len(data.last_name.strip()) > 50:
+                errors.append("Player last name must be 50 characters or less")
+        
+        # Validate email if provided
+        if data.email is not None:
+            if len(data.email) > 255:
+                errors.append("Player email must be 255 characters or less")
+            elif '@' not in data.email:
+                errors.append("Player email must be a valid email address")
         
         return ValidationResult(
             is_valid=len(errors) == 0,
