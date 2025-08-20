@@ -17,10 +17,12 @@ class TournamentCreate(BaseModel):
     name: str = Field(..., max_length=100)
     format: str = Field(default=TournamentFormat.HYBRID_SWISS_ELIMINATION.value)
     swiss_rounds_count: int = Field(default=3)
+    max_teams: int = Field(default=16, gt=0, le=100)
     location: Optional[str] = None
     description: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    status: str = Field(default=TournamentStatus.SETUP.value)
 
 class TournamentUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)

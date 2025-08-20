@@ -18,6 +18,7 @@ from infrastructure.api.csv_import_api import router as csv_import_router
 from infrastructure.api.robots_api import router as robots_router
 from infrastructure.api.players_api import router as players_router
 from infrastructure.api.robot_classes_api import router as robot_classes_router
+from infrastructure.api.tournaments_api import router as tournaments_router
 
 # Configure logging
 logging.basicConfig(
@@ -92,6 +93,12 @@ async def health_check():
 
 
 # Include routers
+app.include_router(
+    tournaments_router,
+    prefix="/api/v1/tournaments",
+    tags=["Tournaments"],
+)
+
 app.include_router(
     teams_router,
     prefix="/api/v1/teams",

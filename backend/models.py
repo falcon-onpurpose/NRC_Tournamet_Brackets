@@ -47,6 +47,7 @@ class TournamentBase(SQLModel):
     format: str = Field(default="hybrid_swiss_elimination")
     status: str = Field(default="setup")
     swiss_rounds_count: int = Field(default=3)
+    max_teams: int = Field(default=16)
     location: Optional[str] = None
     description: Optional[str] = None
     start_date: Optional[datetime] = None
