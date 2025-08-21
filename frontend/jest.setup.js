@@ -74,3 +74,7 @@ global.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
 }
+
+// Polyfill TextEncoder for MSW
+global.TextEncoder = require('util').TextEncoder
+global.TextDecoder = require('util').TextDecoder
